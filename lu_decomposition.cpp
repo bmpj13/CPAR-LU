@@ -87,9 +87,9 @@ void freeMatrix(double **m, int size) {
 
 double decomposeSequential(double **m, int size) {
     clock_t begin, end;
-    int k = 0;
 
     begin = clock();
+    int k = 0;
     while (k < size && m[k][k] != 0) {
         for (int i = k+1; i < size; i++) {
             m[i][k] /= m[k][k];
@@ -106,25 +106,47 @@ double decomposeSequential(double **m, int size) {
 }
 
 /**
- * ?????????????????????????????????????????????????????????????
+ *  ----- ----------
+ * | A00 |    A01   |
+ *  ----- ----------
+ * |     |          |
+ * | A10 |    A11   |
+ * |     |          |
+ *  ----- ----------
+ * 
  * */
 double decomposeSequentialBlock(double **m, int size, int block) {
     clock_t begin, end;
-    int k = 0;
 
     begin = clock();
-    while (k < size && m[k][k] != 0) {
-        for (int i0 = k+1; i0 < size; i0+=block) {
-
-            for (int i = i0; i < MIN(i0+block, size); i++) {
+    for (int k0 = 0; k0 < size; k0 += block) {
+        int limit = MIN(k0+block, size);
+  
+        for (int k = k0; k < limit && m[k][k] != 0; k++) {
+            // A00 + A10
+            for (int i = k+1; i < size; i++) {
                 m[i][k] /= m[k][k];
-                for (int j = k+1; j < size; j++) {
+                for (int j = k+1; j < limit; j++) {
                     m[i][j] -= m[i][k] * m[k][j];
                 }
             }
-            
+
+            // A01
+            for (int i = k+1; i < limit; i++) {
+                for (int j = limit; j < size; j++) {
+                    m[i][j] -= m[i][k] * m[k][j];
+                }
+            }
         }
-        k++;
+
+        // A11
+        for (int i = limit; i < size; i++) {
+            for (int k = k0; k < limit; k++) {
+                for (int j = limit; j < size; j++) {
+                    m[i][j] -= m[i][k] * m[k][j];
+                }
+            }
+        }
     }
     end = clock();
 
@@ -135,7 +157,7 @@ double decomposeParallel(double **m, int size) {
     double begin, end;
     int k;
 
-    omp_set_num_threads(4); // should use what?
+    omp_set_num_threads(10); // should use what?
     begin = omp_get_wtime();
     #pragma omp parallel private(k)
     {
@@ -166,8 +188,8 @@ int main(int argc, char **argv) {
     srand(time(NULL));
 
     double **m1, **m2, **m3, elapsed;
-    int size = 2000;
-    int block = size / 10;
+    int size = 2500;
+    int block = size / 2;
 
     m1 = generateMatrix(size);
     m2 = copyMatrix(m1, size);
