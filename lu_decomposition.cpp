@@ -56,7 +56,23 @@ double ** generateMatrix(int size) {
         m[i] = (double *) malloc(size * sizeof(*m[i]));
 
         for (int j = 0; j < size; j++) {
-            m[i][j] = i*2 + j + 1;  // no specific reason
+            m[i][j] = (double) ((rand() % 20) + 1);
+        }
+    }
+
+    return m;
+}
+
+double ** copyMatrix(double** copy_matrix, int size) {
+    double **m;
+
+    m = (double **) malloc(size * sizeof(*m));
+
+    for (int i = 0; i < size; i++) {
+        m[i] = (double *) malloc(size * sizeof(*m[i]));
+
+        for (int j = 0; j < size; j++) {
+            m[i][j] = copy_matrix[i][j];
         }
     }
 
@@ -98,22 +114,15 @@ double decomposeSequentialBlock(double **m, int size, int block) {
 
     begin = clock();
     while (k < size && m[k][k] != 0) {
-        for (int i = k+1; i < size; i++) {  // Colocar dentro de blocos?????
-            m[i][k] /= m[k][k];
-        }
+        for (int i0 = k+1; i0 < size; i0+=block) {
 
-        for (int i0 = k+1; i0 < size; i0 += block) {
-            int limitI = MIN(i0+block, size);
-
-            for (int j0 = k+1; j0 < size; j0 += block) {
-                int limitJ = MIN(j0+block, size);
-
-                for (int i = i0; i < limitI; i++) {
-                    for (int j = j0; j < limitJ; j++) {
-                        m[i][j] -= m[i][k] * m[k][j];
-                    }
+            for (int i = i0; i < MIN(i0+block, size); i++) {
+                m[i][k] /= m[k][k];
+                for (int j = k+1; j < size; j++) {
+                    m[i][j] -= m[i][k] * m[k][j];
                 }
             }
+            
         }
         k++;
     }
@@ -123,15 +132,16 @@ double decomposeSequentialBlock(double **m, int size, int block) {
 }
 
 double decomposeParallel(double **m, int size) {
-    clock_t begin, end;
+    double begin, end;
     int k;
 
     omp_set_num_threads(4); // should use what?
-    begin = clock();
+    begin = omp_get_wtime();
     #pragma omp parallel private(k)
     {
         k = 0;
-        while (m[k][k] != 0 && k < size) {
+        while (k < size && m[k][k] != 0) {
+
             #pragma omp for
             for (int i = k+1; i < size; i++) {
                 m[i][k] /= m[k][k];
@@ -147,33 +157,37 @@ double decomposeParallel(double **m, int size) {
             k++;
         }
     }
-    end = clock();
+    end = omp_get_wtime();
 
-    return (double) (end - begin) / CLOCKS_PER_SEC;
+    return (double) (end - begin);
 }
 
 int main(int argc, char **argv) {
-    double **m, elapsed;
-    int size = 50000;
-    int block = 300;
+    srand(time(NULL));
 
-    m = generateMatrix(size);
-    elapsed = decomposeSequential(m, size);
+    double **m1, **m2, **m3, elapsed;
+    int size = 2000;
+    int block = size / 10;
+
+    m1 = generateMatrix(size);
+    m2 = copyMatrix(m1, size);
+    m3 = copyMatrix(m1, size);
+
+    elapsed = decomposeSequential(m1, size);
     printf("\nElapsed time: %6.3f seconds\n", elapsed);
-    //printMatrix(m, size);
-    freeMatrix(m, size);
+    //printMatrix(m1, size);
     
-    m = generateMatrix(size);
-    elapsed = decomposeSequentialBlock(m, size, block);
-    printf("\nElapsed time: %6.3f seconds\n", elapsed);
-    //printMatrix(m, size);
-    freeMatrix(m, size);
+    elapsed = decomposeSequentialBlock(m2, size, block);
+    printf("Elapsed time: %6.3f seconds\n", elapsed);
+    //printMatrix(m2, size);
 
-    m = generateMatrix(size);
-    elapsed = decomposeParallel(m, size);
+    elapsed = decomposeParallel(m3, size);
     printf("Elapsed time: %6.3f seconds\n\n", elapsed);
-    //printMatrix(m, size);
-    freeMatrix(m, size);
+    //printMatrix(m3, size);
+
+    freeMatrix(m1, size);
+    freeMatrix(m2, size);
+    freeMatrix(m3, size);
 
     return 0;
 }
