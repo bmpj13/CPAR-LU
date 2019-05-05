@@ -3,22 +3,12 @@
 #include <time.h>
 #include <omp.h>
 #include <assert.h>
-#include <CL/cl.hpp>
+//#include <CL/cl.hpp>
 #include <fstream>
 
 #define MIN(a,b) ((a) < (b) ? (a) : (b))
 
-void printMatrix(double **m, int size) {
-    for (int i = 0; i < size; i++) {
-        for (int j = 0; j < size; j++) {
-            printf("| %6.2f |", m[i][j]);
-        }
-        printf("\n");
-    }
-    printf("\n");
-}
-
-void print1DMatrix(double* m, int size) {
+void printMatrix(double *m, int size) {
     for (int i = 0; i < size; i++) {
         for (int j = 0; j < size; j++) {
             printf("| %6.2f |", m[i*size + j]);
@@ -28,10 +18,10 @@ void print1DMatrix(double* m, int size) {
     printf("\n");
 }
 
-void printMatrixL(double **m, int size) {
+void printMatrixL(double *m, int size) {
     for (int i = 0; i < size; i++) {
         for (int j = 0; j < i; j++) {
-            printf("| %6.2f |", m[i][j]);
+            printf("| %6.2f |", m[i*size + j]);
         }
         
         printf("| %6.2f |", 1.0);
@@ -45,14 +35,14 @@ void printMatrixL(double **m, int size) {
     printf("\n");
 }
 
-void printMatrixU(double **m, int size) {
+void printMatrixU(double *m, int size) {
     for (int i = 0; i < size; i++) {
         for (int j = 0; j < i; j++) {
             printf("| %6.2f |", 0.0);
         }
 
         for (int j = i; j < size; j++) {
-            printf("| %6.2f |", m[i][j]);
+            printf("| %6.2f |", m[i*size + j]);
         }
 
         printf("\n");
@@ -60,69 +50,45 @@ void printMatrixU(double **m, int size) {
     printf("\n");
 }
 
-double ** generateMatrix(int size) {
-    double **m;
-
-    m = (double **) malloc(size * sizeof(*m));
-
-    for (int i = 0; i < size; i++) {
-        m[i] = (double *) malloc(size * sizeof(*m[i]));
-
-        for (int j = 0; j < size; j++) {
-            m[i][j] = (double) ((rand() % 20) + 1);
-        }
-    }
-
-    return m;
-}
-
-double ** copyMatrix(double** copy_matrix, int size) {
-    double **m;
-
-    m = (double **) malloc(size * sizeof(*m));
-
-    for (int i = 0; i < size; i++) {
-        m[i] = (double *) malloc(size * sizeof(*m[i]));
-
-        for (int j = 0; j < size; j++) {
-            m[i][j] = copy_matrix[i][j];
-        }
-    }
-
-    return m;
-}
-
-double* get1DArray(double** copy_matrix, int size) {
+double* generateMatrix(int size) {
     double *m;
 
     m = (double *) malloc(size * size * sizeof(double));
 
     for (int i = 0; i < size; i++) {
         for (int j = 0; j < size; j++) {
-            m[i*size + j] = copy_matrix[i][j];
+            m[i*size + j] = (double) ((rand() % 20) + 1);
         }
     }
 
     return m;
 }
 
-void freeMatrix(double **m, int size) {
-    for(int i = 0; i < size; i++)
-        free(m[i]);
-    free(m);
+double* copyMatrix(double* copy_matrix, int size) {
+    double *m;
+
+    m = (double *) malloc(size * size * sizeof(double));
+
+    for (int i = 0; i < size; i++) {
+        for (int j = 0; j < size; j++) {
+            m[i*size + j] = copy_matrix[i*size + j];
+        }
+    }
+
+    return m;
 }
 
-double decomposeSequential(double **m, int size) {
+double decomposeSequential(double *m, int size) {
     clock_t begin, end;
 
     begin = clock();
     int k = 0;
-    while (k < size && m[k][k] != 0) {
+    while (k < size && m[k*size + k] != 0) {
         for (int i = k+1; i < size; i++) {
-            m[i][k] /= m[k][k];
+            m[i*size + k] /= m[k*size + k];
 
             for (int j = k+1; j < size; j++) {
-                m[i][j] -= m[i][k] * m[k][j];
+                m[i*size + j] -= m[i*size + k] * m[k*size + j];
             }
         }
         k++;
@@ -140,37 +106,36 @@ double decomposeSequential(double **m, int size) {
  * | A10 |    A11   |
  * |     |          |
  *  ----- ----------
- * 
  * */
-double decomposeSequentialBlock(double **m, int size, int block) {
+double decomposeSequentialBlock(double *m, int size, int block) {
     clock_t begin, end;
 
     begin = clock();
     for (int k0 = 0; k0 < size; k0 += block) {
         int limit = MIN(k0+block, size);
   
-        for (int k = k0; k < limit && m[k][k] != 0; k++) {
-            // A00 + A10
+        for (int k = k0; k < limit && m[k*size + k] != 0; k++) {
+            // A00 (green) + A10 (yellow)
             for (int i = k+1; i < size; i++) {
-                m[i][k] /= m[k][k];
+                m[i*size + k] /= m[k*size + k];
                 for (int j = k+1; j < limit; j++) {
-                    m[i][j] -= m[i][k] * m[k][j];
+                    m[i*size + j] -= m[i*size + k] * m[k*size + j];
                 }
             }
 
-            // A01
+            // A01 (red)
             for (int i = k+1; i < limit; i++) {
                 for (int j = limit; j < size; j++) {
-                    m[i][j] -= m[i][k] * m[k][j];
+                    m[i*size + j] -= m[i*size + k] * m[k*size + j];
                 }
             }
         }
 
-        // A11
+        // A11 (blue)
         for (int i = limit; i < size; i++) {
             for (int k = k0; k < limit; k++) {
                 for (int j = limit; j < size; j++) {
-                    m[i][j] -= m[i][k] * m[k][j];
+                    m[i*size + j] -= m[i*size + k] * m[k*size + j];
                 }
             }
         }
@@ -180,7 +145,7 @@ double decomposeSequentialBlock(double **m, int size, int block) {
     return (double) (end - begin) / CLOCKS_PER_SEC;
 }
 
-double decomposeParallelMP(double **m, int size) {
+double decomposeParallelMP(double *m, int size) {
     double begin, end;
     int k;
 
@@ -189,17 +154,17 @@ double decomposeParallelMP(double **m, int size) {
     #pragma omp parallel private(k)
     {
         k = 0;
-        while (k < size && m[k][k] != 0) {
+        while (k < size && m[k*size + k] != 0) {
 
             #pragma omp for
             for (int i = k+1; i < size; i++) {
-                m[i][k] /= m[k][k];
+                m[i*size + k] /= m[k*size + k];
             }
             
             #pragma omp for
             for (int i = k+1; i < size; i++) {
                 for (int j = k+1; j < size; j++) {
-                    m[i][j] -= m[i][k] * m[k][j];
+                    m[i*size + j] -= m[i*size + k] * m[k*size + j];
                 }
             }
 
@@ -211,6 +176,7 @@ double decomposeParallelMP(double **m, int size) {
     return (double) (end - begin);
 }
 
+/*
 double decomposeParallelCL(double *m, int size) {
     std::vector<cl::Platform> platforms;
     std::vector<cl::Device> devices;
@@ -262,50 +228,20 @@ double decomposeParallelCL(double *m, int size) {
     
     queue.enqueueReadBuffer(matrix, CL_TRUE, 0, size * size * sizeof(double), m);
     return (double) (end - begin) / CLOCKS_PER_SEC;
-
-    /*
-    // Single-dimension array
-    std::vector<int> vec(1024, 5);
-    cl::Buffer inBuf(context, CL_MEM_READ_ONLY | CL_MEM_HOST_NO_ACCESS | CL_MEM_COPY_HOST_PTR, sizeof(int) * vec.size(), vec.data());
-    cl::Buffer outBuf(context, CL_MEM_WRITE_ONLY | CL_MEM_HOST_READ_ONLY, sizeof(int) * vec.size());
-    cl::Kernel kernel(program, "ProcessArray");
-
-    kernel.setArg(0, inBuf);
-    kernel.setArg(1, outBuf);
-    cl::CommandQueue queue(context, device);
-    queue.enqueueNDRangeKernel(kernel, cl::NullRange, cl::NDRange(vec.size()));
-    queue.enqueueReadBuffer(outBuf, CL_FALSE, 0, sizeof(int) * vec.size(), vec.data());
-    cl::finish();
-    */
-    
-    /*
-    // Hello World!
-    char buf[16];
-    cl::Buffer buffer(context, CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY, sizeof(buf));
-    cl::Kernel kernel(program, "HelloWorld");
-
-    kernel.setArg(0, buffer);
-
-    cl::CommandQueue queue(context, device);
-    queue.enqueueTask(kernel);
-    queue.enqueueReadBuffer(buffer, CL_TRUE, 0, sizeof(buf), buf);
-
-    printf("RESULT: %s", buf);
-    */
 }
+*/
 
 int main(int argc, char **argv) {
     srand(time(NULL));
 
-    double **m1, **m2, **m3, *m4, elapsed;
-    int size = 1000;
+    double *m1, *m2, *m3, *m4, elapsed;
+    int size = 3000;
     int block = size / 10;
-
     
     m1 = generateMatrix(size);
     m2 = copyMatrix(m1, size);
     m3 = copyMatrix(m1, size);
-    m4 = get1DArray(m1, size);
+    m4 = copyMatrix(m1, size);
 
     elapsed = decomposeSequential(m1, size);
     printf("\nElapsed time: %6.3f seconds\n", elapsed);
@@ -319,13 +255,13 @@ int main(int argc, char **argv) {
     printf("Elapsed time: %6.3f seconds\n\n", elapsed);
     //printMatrix(m3, size);
 
-    elapsed = decomposeParallelCL(m4, size);
-    printf("Elapsed time: %6.3f seconds\n\n", elapsed);
+    //elapsed = decomposeParallelCL(m4, size);
+    //printf("Elapsed time: %6.3f seconds\n\n", elapsed);
     //print1DMatrix(m4, size);
     
-    freeMatrix(m1, size);
-    freeMatrix(m2, size);
-    freeMatrix(m3, size);
+    free(m1);
+    free(m2);
+    free(m3);
     free(m4);
 
     return 0;
