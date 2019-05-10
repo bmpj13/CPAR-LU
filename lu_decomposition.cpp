@@ -82,7 +82,8 @@ double* copyMatrix(double* copy_matrix, int size) {
 bool equalMatrixes(double *m1, double *m2, int size) {
     for (int i = 0; i < size; i++) {
         for (int j = 0; j < size; j++) {
-            if (abs(m1[i*size + j] - m2[i*size + j]) > 0.01) {
+            if (abs(m1[i*size + j] - m2[i*size + j]) > 5.0) {
+                printf("NOT EQUAL AT (i,j) = (%d,%d); m1: %f, m2: %f\n", i, j, m1[i*size + j], m2[i*size + j]);
                 return false;
             }
         }
@@ -276,7 +277,7 @@ double decomposeParallelCLBlocks(double *m, int size) {
     kernelColumns.setArg(0, matrix);
     kernelColumns.setArg(1, size);
 
-    cl::Kernel kernelSubmatrix(program, "ProcessSubmatrix");
+    cl::Kernel kernelSubmatrix(program, "ProcessSubmatrixBlocks");
     kernelSubmatrix.setArg(0, matrix);
     kernelSubmatrix.setArg(1, size);
 
@@ -289,9 +290,8 @@ double decomposeParallelCLBlocks(double *m, int size) {
         kernelSubmatrix.setArg(2, k);
         kernelColumns.setArg(3, blockSize);
         kernelSubmatrix.setArg(3, blockSize);
-        
         queue.enqueueNDRangeKernel(kernelColumns, cl::NullRange, cl::NDRange(range));
-        //queue.enqueueNDRangeKernel(kernelSubmatrix, cl::NullRange, cl::NDRange(range, range));
+        queue.enqueueNDRangeKernel(kernelSubmatrix, cl::NullRange, cl::NDRange(range, range));
         k++;
     }
     cl::finish();
@@ -305,8 +305,8 @@ int main(int argc, char **argv) {
     srand(time(NULL));
 
     double *m, *m1, *m2, *m3, *m4, *m5, elapsed;
-    int size = 1000;
-    int block = 2;
+    int size = 3000;
+    int block = size / 10;
     
     m = generateMatrix(size);
     m1 = copyMatrix(m, size);
@@ -315,17 +315,17 @@ int main(int argc, char **argv) {
     m4 = copyMatrix(m, size);
     m5 = copyMatrix(m, size);
 
-    // elapsed = decomposeSequential(m1, size);
-    // printf("\nElapsed time: %6.3f seconds\n", elapsed);
-    // printMatrix(m1, size);
+    elapsed = decomposeSequential(m1, size);
+    printf("\nElapsed time: %6.3f seconds\n", elapsed);
+    //printMatrix(m1, size);
     
-    // elapsed = decomposeSequentialBlock(m2, size, block);
-    // printf("Elapsed time: %6.3f seconds\n", elapsed);
-    // printMatrix(m2, size);
+    elapsed = decomposeSequentialBlock(m2, size, block);
+    printf("Elapsed time: %6.3f seconds\n", elapsed);
+    //printMatrix(m2, size);
 
-    // elapsed = decomposeParallelMP(m3, size);
-    // printf("Elapsed time: %6.3f seconds\n\n", elapsed);
-    // printMatrix(m3, size);
+    elapsed = decomposeParallelMP(m3, size);
+    printf("Elapsed time: %6.3f seconds\n\n", elapsed);
+    //printMatrix(m3, size);
     
     elapsed = decomposeParallelCL(m4, size);
     printf("Elapsed time: %6.3f seconds\n\n", elapsed);
@@ -335,22 +335,17 @@ int main(int argc, char **argv) {
     printf("Elapsed time: %6.3f seconds\n\n", elapsed);
     //printMatrix(m5, size);
 
-    // if (
-    //     !equalMatrixes(m, m1, size) &&
-    //     equalMatrixes(m1, m2, size) &&
-    //     equalMatrixes(m1, m3, size) &&
-    //     equalMatrixes(m1, m4, size) &&
-    //     equalMatrixes(m1, m5, size)
-    // ) {
-    //     printf("CORRECT RESULT\n");
-    // }
-
     if (
-        equalMatrixes(m4, m5, size)
+        !equalMatrixes(m, m1, size) &&
+        equalMatrixes(m1, m2, size) &&
+        equalMatrixes(m1, m3, size) &&
+        equalMatrixes(m1, m4, size) &&
+        equalMatrixes(m1, m5, size)
     ) {
         printf("CORRECT RESULT\n");
     }
     
+    free(m);
     free(m1);
     free(m2);
     free(m3);
