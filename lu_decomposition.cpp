@@ -3,8 +3,9 @@
 #include <time.h>
 #include <omp.h>
 #include <assert.h>
-//#include <CL/cl.hpp>
+#include <CL/cl.hpp>
 #include <fstream>
+#include <math.h>
 
 #define MIN(a,b) ((a) < (b) ? (a) : (b))
 
@@ -76,6 +77,18 @@ double* copyMatrix(double* copy_matrix, int size) {
     }
 
     return m;
+}
+
+bool equalMatrixes(double *m1, double *m2, int size) {
+    for (int i = 0; i < size; i++) {
+        for (int j = 0; j < size; j++) {
+            if (abs(m1[i*size + j] - m2[i*size + j]) > 0.01) {
+                return false;
+            }
+        }
+    }
+
+    return true;
 }
 
 double decomposeSequential(double *m, int size) {
@@ -176,7 +189,6 @@ double decomposeParallelMP(double *m, int size) {
     return (double) (end - begin);
 }
 
-/*
 double decomposeParallelCL(double *m, int size) {
     std::vector<cl::Platform> platforms;
     std::vector<cl::Device> devices;
@@ -229,40 +241,121 @@ double decomposeParallelCL(double *m, int size) {
     queue.enqueueReadBuffer(matrix, CL_TRUE, 0, size * size * sizeof(double), m);
     return (double) (end - begin) / CLOCKS_PER_SEC;
 }
-*/
+
+double decomposeParallelCLBlocks(double *m, int size) {
+    std::vector<cl::Platform> platforms;
+    std::vector<cl::Device> devices;
+    clock_t begin, end;
+
+    cl::Platform::get(&platforms);
+    assert(platforms.size() > 0);
+    cl::Platform platform = platforms.front();
+    
+    platform.getDevices(CL_DEVICE_TYPE_ALL, &devices);
+    assert(devices.size() > 0);
+    cl::Device device = devices.front();
+
+    std::string vendor = device.getInfo<CL_DEVICE_VENDOR>();
+    std::string version = device.getInfo<CL_DEVICE_VERSION>();
+    int numCores = device.getInfo<CL_DEVICE_MAX_COMPUTE_UNITS>();
+    printf("DEVICE: %s %s; Number of cores: %d\n", vendor.c_str(), version.c_str(), numCores);
+
+    std::ifstream decompFile("decomp.cl");
+    std::string src((std::istreambuf_iterator<char>(decompFile)), std::istreambuf_iterator<char>());
+
+    cl::Program::Sources sources(1, std::make_pair(src.c_str(), src.length()+1));
+    cl::Context context(devices);
+    cl::Program program(context, sources);
+
+    program.build();
+    
+    cl::CommandQueue queue(context, device);
+    cl::Buffer matrix(context, CL_MEM_READ_WRITE | CL_MEM_HOST_READ_ONLY | CL_MEM_COPY_HOST_PTR, size * size * sizeof(double), m);
+
+    cl::Kernel kernelColumns(program, "ProcessColumnBlocks");
+    kernelColumns.setArg(0, matrix);
+    kernelColumns.setArg(1, size);
+
+    cl::Kernel kernelSubmatrix(program, "ProcessSubmatrix");
+    kernelSubmatrix.setArg(0, matrix);
+    kernelSubmatrix.setArg(1, size);
+
+    begin = clock();
+    int k = 0;
+    while (k < size && m[k*size + k] != 0) {
+        int blockSize = (int) ceil((double) (size-1-k)/numCores);
+        int range = MIN(size-1-k, numCores);
+        kernelColumns.setArg(2, k);
+        kernelSubmatrix.setArg(2, k);
+        kernelColumns.setArg(3, blockSize);
+        kernelSubmatrix.setArg(3, blockSize);
+        
+        queue.enqueueNDRangeKernel(kernelColumns, cl::NullRange, cl::NDRange(range));
+        //queue.enqueueNDRangeKernel(kernelSubmatrix, cl::NullRange, cl::NDRange(range, range));
+        k++;
+    }
+    cl::finish();
+    end = clock();
+    
+    queue.enqueueReadBuffer(matrix, CL_TRUE, 0, size * size * sizeof(double), m);
+    return (double) (end - begin) / CLOCKS_PER_SEC;
+}
 
 int main(int argc, char **argv) {
     srand(time(NULL));
 
-    double *m1, *m2, *m3, *m4, elapsed;
-    int size = 3000;
-    int block = size / 10;
+    double *m, *m1, *m2, *m3, *m4, *m5, elapsed;
+    int size = 1000;
+    int block = 2;
     
-    m1 = generateMatrix(size);
-    m2 = copyMatrix(m1, size);
-    m3 = copyMatrix(m1, size);
-    m4 = copyMatrix(m1, size);
+    m = generateMatrix(size);
+    m1 = copyMatrix(m, size);
+    m2 = copyMatrix(m, size);
+    m3 = copyMatrix(m, size);
+    m4 = copyMatrix(m, size);
+    m5 = copyMatrix(m, size);
 
-    elapsed = decomposeSequential(m1, size);
-    printf("\nElapsed time: %6.3f seconds\n", elapsed);
-    //printMatrix(m1, size);
+    // elapsed = decomposeSequential(m1, size);
+    // printf("\nElapsed time: %6.3f seconds\n", elapsed);
+    // printMatrix(m1, size);
     
-    elapsed = decomposeSequentialBlock(m2, size, block);
-    printf("Elapsed time: %6.3f seconds\n", elapsed);
-    //printMatrix(m2, size);
+    // elapsed = decomposeSequentialBlock(m2, size, block);
+    // printf("Elapsed time: %6.3f seconds\n", elapsed);
+    // printMatrix(m2, size);
 
-    elapsed = decomposeParallelMP(m3, size);
+    // elapsed = decomposeParallelMP(m3, size);
+    // printf("Elapsed time: %6.3f seconds\n\n", elapsed);
+    // printMatrix(m3, size);
+    
+    elapsed = decomposeParallelCL(m4, size);
     printf("Elapsed time: %6.3f seconds\n\n", elapsed);
-    //printMatrix(m3, size);
+    //printMatrix(m4, size);
 
-    //elapsed = decomposeParallelCL(m4, size);
-    //printf("Elapsed time: %6.3f seconds\n\n", elapsed);
-    //print1DMatrix(m4, size);
+    elapsed = decomposeParallelCLBlocks(m5, size);
+    printf("Elapsed time: %6.3f seconds\n\n", elapsed);
+    //printMatrix(m5, size);
+
+    // if (
+    //     !equalMatrixes(m, m1, size) &&
+    //     equalMatrixes(m1, m2, size) &&
+    //     equalMatrixes(m1, m3, size) &&
+    //     equalMatrixes(m1, m4, size) &&
+    //     equalMatrixes(m1, m5, size)
+    // ) {
+    //     printf("CORRECT RESULT\n");
+    // }
+
+    if (
+        equalMatrixes(m4, m5, size)
+    ) {
+        printf("CORRECT RESULT\n");
+    }
     
     free(m1);
     free(m2);
     free(m3);
     free(m4);
+    free(m5);
 
     return 0;
 }

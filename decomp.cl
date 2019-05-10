@@ -1,25 +1,3 @@
-__kernel void HelloWorld(__global char* data)
-{
-    data[0] = 'H';
-    data[1] = 'e';
-    data[2] = 'l';
-    data[3] = 'l';
-    data[4] = 'o';
-    data[5] = ' ';
-    data[6] = 'W';
-    data[7] = 'o';
-    data[8] = 'r';
-    data[9] = 'l';
-    data[10] = 'd';
-    data[11] = '!';
-    data[12] = '\n';
-}
-
-__kernel void ProcessArray(__global int* data, __global int* outData)
-{
-    outData[get_global_id(0)] = data[get_global_id(0)] * 2;
-}
-
 __kernel void ProcessColumn(__global double* data, int size, int k) {
     int id = get_global_id(0);
     int row = k + id + 1;
@@ -34,4 +12,32 @@ __kernel void ProcessSubmatrix(__global double* data, int size, int k) {
     int col = k + idCol + 1;
 
     data[row*size + col] -= data[row*size + k] * data[k*size + col];
+}
+
+__kernel void ProcessColumnBlocks(__global double* data, int size, int k, int blockSize) {
+    int id = get_global_id(0);
+    int start = id * blockSize;
+
+    printf("id: %d; blockSize: %d; start: %d\n", id, blockSize, start);
+
+    for (int i = start; i < start + blockSize; i++) {
+        int row = k + i + 1; // <----- TODO PRECISO TROCAR ISTO!!
+        printf("size: %d; i: %d, j: %d\n", size, row*size + k, k*size + k);
+        data[row*size + k] /= data[k*size + k];
+    }
+}
+
+__kernel void ProcessSubmatrixBlocks(__global double* data, int size, int k, int blockSize) {
+    int idRow = get_global_id(0);
+    int idCol = get_global_id(1);
+    int startI = idRow * blockSize;
+    int startJ = idCol * blockSize;
+
+    for (int i = startI; i < startI + blockSize; i++) {
+        for (int j = startJ; j < startJ + blockSize; j++) {
+            int row = k + i + 1;
+            int col = k + j + 1;
+            data[row*size + col] -= data[row*size + k] * data[k*size + col];
+        }
+    }
 }
