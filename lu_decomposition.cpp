@@ -83,7 +83,7 @@ bool equalMatrixes(double *m1, double *m2, int size) {
     for (int i = 0; i < size; i++) {
         for (int j = 0; j < size; j++) {
             if (abs(m1[i*size + j] - m2[i*size + j]) > 5.0) {
-                printf("NOT EQUAL AT (i,j) = (%d,%d); m1: %f, m2: %f\n", i, j, m1[i*size + j], m2[i*size + j]);
+                // printf("NOT EQUAL AT (i,j) = (%d,%d); m1: %f, m2: %f\n", i, j, m1[i*size + j], m2[i*size + j]);
                 return false;
             }
         }
@@ -163,7 +163,7 @@ double decomposeParallelMP(double *m, int size) {
     double begin, end;
     int k;
 
-    omp_set_num_threads(10); // should use what?
+    omp_set_num_threads(1);
     begin = omp_get_wtime();
     #pragma omp parallel private(k)
     {
@@ -243,7 +243,7 @@ double decomposeParallelCL(double *m, int size) {
     return (double) (end - begin) / CLOCKS_PER_SEC;
 }
 
-double decomposeParallelCLBlocks(double *m, int size) {
+double decomposeParallelCLBlocks(double *m, int size, int cores) {
     std::vector<cl::Platform> platforms;
     std::vector<cl::Device> devices;
     clock_t begin, end;
@@ -258,7 +258,7 @@ double decomposeParallelCLBlocks(double *m, int size) {
 
     std::string vendor = device.getInfo<CL_DEVICE_VENDOR>();
     std::string version = device.getInfo<CL_DEVICE_VERSION>();
-    int numCores = device.getInfo<CL_DEVICE_MAX_COMPUTE_UNITS>();
+    int numCores = MIN(cores, device.getInfo<CL_DEVICE_MAX_COMPUTE_UNITS>());
     printf("DEVICE: %s %s; Number of cores: %d\n", vendor.c_str(), version.c_str(), numCores);
 
     std::ifstream decompFile("decomp.cl");
@@ -305,8 +305,9 @@ int main(int argc, char **argv) {
     srand(time(NULL));
 
     double *m, *m1, *m2, *m3, *m4, *m5, elapsed;
-    int size = 3000;
+    int size = 2828;
     int block = size / 10;
+    int cores = 3;
     
     m = generateMatrix(size);
     m1 = copyMatrix(m, size);
@@ -331,7 +332,7 @@ int main(int argc, char **argv) {
     printf("Elapsed time: %6.3f seconds\n\n", elapsed);
     //printMatrix(m4, size);
 
-    elapsed = decomposeParallelCLBlocks(m5, size);
+    elapsed = decomposeParallelCLBlocks(m5, size, cores);
     printf("Elapsed time: %6.3f seconds\n\n", elapsed);
     //printMatrix(m5, size);
 
